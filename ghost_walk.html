@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>小飘逛房间</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a1a; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; overflow: hidden; }
+        canvas { display: block; }
+
+        #loading {
+            position: fixed; inset: 0; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+            background: #0a0a1a; color: rgba(255,255,255,0.6); font-size: 15px;
+            transition: opacity 0.8s;
+        }
+        #loading .spinner {
+            width: 40px; height: 40px; margin-bottom: 16px;
+            border: 3px solid rgba(255,255,255,0.08);
+            border-top-color: #88ddff; border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loading.hidden { opacity: 0; pointer-events: none; }
+
+        #hint {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.75); color: #fff; padding: 28px 40px;
+            border-radius: 16px; text-align: center; z-index: 50;
+            backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08);
+            pointer-events: none; transition: opacity 0.5s; user-select: none;
+            min-width: 280px;
+        }
+        #hint h2 { font-size: 22px; margin-bottom: 6px; color: #88ddff; font-weight: 400; }
+        #hint p { font-size: 14px; color: rgba(255,255,255,0.5); margin: 4px 0; }
+        #hint .key { display: inline-block; background: rgba(255,255,255,0.1); padding: 0 8px; border-radius: 4px; font-size: 13px; }
+        #hint .controls-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; text-align: left;
+            margin: 10px 0; font-size: 13px;
+        }
+        #hint .controls-grid .key { min-width: 30px; text-align: center; margin-right: 4px; }
+        #hint .controls-grid span { display: flex; align-items: center; gap: 6px; }
+        #hint .click-hint { margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.3); }
+        #hint.hidden { opacity: 0; }
+
+        #hud {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 16px; z-index: 10; pointer-events: none;
+            opacity: 0; transition: opacity 0.5s;
+        }
+        #hud.show { opacity: 1; }
+        #hud .item {
+            background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.7);
+            padding: 5px 14px; border-radius: 20px; font-size: 12px;
+            backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.05);
+        }
+        #hud .item strong { color: #88ddff; font-weight: 400; }
+
+        #room-label {
+            position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.8); font-size: 17px; z-index: 10;
+            pointer-events: none; opacity: 0; transition: opacity 0.6s;
+            text-shadow: 0 2px 20px rgba(0,0,0,0.8); white-space: nowrap;
+        }
+        #room-label.show { opacity: 1; }
+
+        #toggle-btn, #btn-reset {
+            position: fixed; z-index: 20;
+            background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.6); cursor: pointer; font-size: 11px;
+            backdrop-filter: blur(8px); transition: all 0.2s; font-family: inherit;
+            padding: 5px 12px; border-radius: 18px;
+        }
+        #toggle-btn:hover, #btn-reset:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.85); }
+        #toggle-btn { top: 14px; right: 14px; }
+        #btn-reset { bottom: 74px; right: 14px; }
+
+        /* 右下角小飘头像指示器 */
+        #ghost-indicator {
+            position: fixed; bottom: 24px; right: 16px; z-index: 15;
+            pointer-events: none; opacity: 0; transition: opacity 0.5s;
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
+        }
+        #ghost-indicator.show { opacity: 1; }
+        #ghost-indicator .avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(136,221,255,0.3), rgba(136,221,255,0.05));
+            border: 1px solid rgba(136,221,255,0.2);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+        }
+        #ghost-indicator .name {
+            font-size: 10px; color: rgba(255,255,255,0.3);
+        }
+
+        /* 手机端触控提示 */
+        #touch-controls {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            z-index: 15; opacity: 0; transition: opacity 0.5s;
+            display: flex; gap: 8px; touch-action: none;
+        }
+        #touch-controls.show { opacity: 1; }
+        .tc-btn {
+            width: 48px; height: 48px; border-radius: 12px;
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.6); font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; user-select: none; -webkit-user-select: none;
+            touch-action: none;
+        }
+        .tc-btn:active { background: rgba(255,255,255,0.18); }
+        #touch-dpad { display: grid; grid-template-columns: 48px 48px 48px; grid-template-rows: 48px 48px; gap: 4px; }
+        #touch-dpad .tc-btn { width: 48px; height: 48px; }
+        #touch-dpad .blank { visibility: hidden; }
+
+        /* 移动端适配 */
+        @media (max-width: 600px) {
+            #hint { padding: 20px 24px; min-width: auto; width: 85%; }
+            #hint h2 { font-size: 18px; }
+            #hint p, #hint .controls-grid { font-size: 12px; }
+            #room-label { font-size: 14px; top: 14px; }
+            #hud { gap: 8px; }
+            #hud .item { font-size: 10px; padding: 3px 10px; }
+        }
+        @media (pointer: coarse) {
+            #touch-controls.show { opacity: 1; }
+            #hint .controls-grid span:not(.show-touch) { display: none; }
+            #hint .click-hint { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><span>🫥 小飘准备中...</span></div>
+
+<div id="hint">
+    <h2>🫥 小飘逛房间</h2>
+    <div class="controls-grid">
+        <span><span class="key">W</span><span class="key">↑</span> 前进</span>
+        <span><span class="key">鼠标</span> 环顾四周</span>
+        <span><span class="key">S</span><span class="key">↓</span> 后退</span>
+        <span><span class="key">V</span> 切换视角</span>
+        <span><span class="key">A</span><span class="key">←</span> 左移</span>
+        <span><span class="key">Shift</span> 加速</span>
+        <span><span class="key">D</span><span class="key">→</span> 右移</span>
+        <span><span class="key">R</span> 重置位置</span>
+    </div>
+    <div class="click-hint">✱ 点击屏幕锁定鼠标</div>
+</div>
+
+<div id="room-label">🏠 精致小房间</div>
+
+<div id="hud">
+    <div class="item">👻 <strong id="view-mode">第三人称</strong></div>
+    <div class="item">📍 <strong id="pos-display">0.0, 0.0</strong></div>
+</div>
+
+<div id="ghost-indicator">
+    <div class="avatar">🫥</div>
+    <div class="name">小飘</div>
+</div>
+
+<button id="toggle-btn">👁 V</button>
+<button id="btn-reset">↺ R</button>
+
+<div id="touch-controls">
+    <div id="touch-dpad">
+        <div class="blank"></div>
+        <div class="tc-btn" data-key="w">▲</div>
+        <div class="blank"></div>
+        <div class="tc-btn" data-key="a">◀</div>
+        <div class="tc-btn" data-key="s">▼</div>
+        <div class="tc-btn" data-key="d">▶</div>
+    </div>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ===== 场景 =====
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14142a);
+scene.fog = new THREE.FogExp2(0x14142a, 0.05);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 25);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.9;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+
+// ===== 灯光 =====
+scene.add(new THREE.AmbientLight(0x304060, 0.35));
+scene.add(new THREE.HemisphereLight(0x8899cc, 0x443322, 0.5));
+
+const main = new THREE.DirectionalLight(0xffeedd, 1.8);
+main.position.set(4, 8, 3);
+main.castShadow = true;
+main.shadow.mapSize.width = 1024;
+main.shadow.mapSize.height = 1024;
+main.shadow.camera.near = 0.5;
+main.shadow.camera.far = 20;
+main.shadow.camera.left = -8;
+main.shadow.camera.right = 8;
+main.shadow.camera.top = 8;
+main.shadow.camera.bottom = -8;
+scene.add(main);
+
+const fill = new THREE.DirectionalLight(0x8888ff, 0.5);
+fill.position.set(-3, 2, -4);
+scene.add(fill);
+scene.add(new THREE.DirectionalLight(0xffffff, 0.3).position.set(-2, 1, 4));
+
+const ghostLight = new THREE.PointLight(0x88ddff, 0.5, 6);
+scene.add(ghostLight);
+
+// ===== 建房子! =====
+const ROOM_W = 6, ROOM_D = 6, ROOM_H = 2.8;
+const WALL_TH = 0.12;
+
+function makeMat(color, rough = 0.5, metal = 0, extra = {}) {
+    return new THREE.MeshStandardMaterial({
+        color, roughness: rough, metalness: metal, ...extra
+    });
+}
+
+// --- 地板 ---
+const floorMat = makeMat(0xc4946a, 0.6);
+const floor = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W, WALL_TH, ROOM_D), floorMat);
+floor.position.set(0, WALL_TH/2, 0);
+floor.receiveShadow = true;
+scene.add(floor);
+
+// 木地板线条
+for (let i = -2.8; i <= 2.8; i += 0.35) {
+    const line = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.6, 0.01),
+        new THREE.MeshBasicMaterial({ color: 0x8a6a4a, transparent: true, opacity: 0.15, depthWrite: false })
+    );
+    line.rotation.x = -Math.PI/2;
+    line.position.set(0, WALL_TH + 0.001, i);
+    scene.add(line);
+}
+
+// --- 墙壁 ---
+function makeWall(x, z, sx, sz, color = 0xe8ddd0) {
+    const mat = makeMat(color, 0.6);
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(sx, ROOM_H, sz), mat);
+    wall.position.set(x, ROOM_H/2, z);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    return wall;
+}
+
+// 四面墙（用分段墙+门洞）
+// 后墙 (z = -3)
+scene.add(makeWall(0, -ROOM_D/2, ROOM_W, WALL_TH));
+// 前墙 (z = 3) — 有门洞
+scene.add(makeWall(-1.8, ROOM_D/2, 1.8, WALL_TH));
+scene.add(makeWall(1.8, ROOM_D/2, 1.8, WALL_TH));
+// 左墙 (x = -3)
+scene.add(makeWall(-ROOM_W/2, 0, WALL_TH, ROOM_D));
+// 右墙 (x = 3)
+scene.add(makeWall(ROOM_W/2, 0, WALL_TH, ROOM_D));
+
+// --- 天花板 ---
+const ceilMat = makeMat(0xf0e8e0, 0.7);
+const ceil = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W, 0.05, ROOM_D), ceilMat);
+ceil.position.set(0, ROOM_H, 0);
+scene.add(ceil);
+
+// --- 踢脚线 ---
+const trimMat = makeMat(0x8a7a6a, 0.5);
+function addTrim(x, z, sx, sz) {
+    const t = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.08, sz), trimMat);
+    t.position.set(x, 0.04, z);
+    scene.add(t);
+}
+addTrim(0, -ROOM_D/2, ROOM_W, WALL_TH+0.02);
+addTrim(-1.8, ROOM_D/2, 1.8, WALL_TH+0.02);
+addTrim(1.8, ROOM_D/2, 1.8, WALL_TH+0.02);
+addTrim(-ROOM_W/2, 0, WALL_TH+0.02, ROOM_D);
+addTrim(ROOM_W/2, 0, WALL_TH+0.02, ROOM_D);
+
+// ===== 家具 =====
+
+// --- 桌子 (居中偏下) ---
+const TABLE_W = 1.4, TABLE_D = 0.9, TABLE_H = 0.72;
+const tableMat = makeMat(0x7a5a3a, 0.4);
+const tableTop = new THREE.Mesh(new THREE.BoxGeometry(TABLE_W, 0.06, TABLE_D), tableMat);
+tableTop.position.set(0, TABLE_H, 0);
+tableTop.castShadow = true; tableTop.receiveShadow = true;
+scene.add(tableTop);
+
+const legMat = makeMat(0x6a4a2a, 0.5);
+for (let lx of [-TABLE_W/2+0.08, TABLE_W/2-0.08]) {
+    for (let lz of [-TABLE_D/2+0.08, TABLE_D/2-0.08]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, TABLE_H, 8), legMat);
+        leg.position.set(lx, TABLE_H/2, lz);
+        scene.add(leg);
+    }
+}
+
+// --- 椅子 ---
+function makeChair(cx, cz, rotY) {
+    const g = new THREE.Group();
+    const seatMat = makeMat(0x4a4a4a, 0.5);
+    const cushionMat = makeMat(0x8a6a4a, 0.7);
+    const backMat = makeMat(0x4a4a4a, 0.5);
+    const legMatC = makeMat(0x3a3a3a, 0.6);
+    
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.04, 0.38), seatMat);
+    seat.position.set(0, 0.44, 0); seat.castShadow = true; g.add(seat);
+    
+    const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.32), cushionMat);
+    cushion.position.set(0, 0.47, 0); g.add(cushion);
+    
+    for (let lx of [-0.17, 0.17]) {
+        for (let lz of [-0.17, 0.17]) {
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.025, 0.42, 6), legMatC);
+            leg.position.set(lx, 0.21, lz);
+            g.add(leg);
+        }
+    }
+    
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.5, 0.03), backMat);
+    back.position.set(0, 0.72, 0.20); g.add(back);
+    
+    g.position.set(cx, 0, cz);
+    g.rotation.y = rotY;
+    scene.add(g);
+    return g;
+}
+
+makeChair(0, -1.60, Math.PI);       // 前（朝桌子）
+makeChair(0, 1.60, 0);             // 后（朝桌子）
+makeChair(-1.25, 0, Math.PI/2);    // 左
+makeChair(1.25, 0, -Math.PI/2);    // 右
+
+// --- 茶几 (右下) ---
+const teaTableMat = makeMat(0x8a6a4a, 0.4);
+const tea = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.45), teaTableMat);
+tea.position.set(1.8, 0.4, -1.5);
+tea.castShadow = true; tea.receiveShadow = true;
+scene.add(tea);
+// 茶几腿
+for (let tx of [-0.26, 0.26]) {
+    for (let tz of [-0.2, 0.2]) {
+        const tl = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.35, 6), legMat);
+        tl.position.set(1.8+tx, 0.175, -1.5+tz);
+        scene.add(tl);
+    }
+}
+
+// --- 台灯 (茶几上) ---
+const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.04, 12), makeMat(0x5a5a5a, 0.4));
+lampBase.position.set(2.0, 0.43, -1.3); scene.add(lampBase);
+const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.25, 8), makeMat(0x3a3a3a, 0.5));
+lampPole.position.set(2.0, 0.55, -1.3); scene.add(lampPole);
+const lampShade = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.06, 0.08, 12),
+    makeMat(0xeeddcc, 0.6, 0, { emissive: 0xffdd88, emissiveIntensity: 0.3 }));
+lampShade.position.set(2.0, 0.7, -1.3); scene.add(lampShade);
+const lampLight = new THREE.PointLight(0xffdd88, 0.3, 2);
+lampLight.position.set(2.0, 0.65, -1.3);
+scene.add(lampLight);
+
+// --- 地毯 ---
+const rugMat = makeMat(0x6a5a4a, 0.8);
+const rug = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, 0.03, 16), rugMat);
+rug.position.set(0, WALL_TH+0.015, 0);
+scene.add(rug);
+
+// --- 装饰画 (后墙) ---
+const frameMat = makeMat(0x3a2a1a, 0.4);
+const printMat = new THREE.MeshBasicMaterial({ color: 0x88bbcc });
+const frame = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.03), frameMat);
+frame.position.set(0.5, 1.8, -ROOM_D/2+0.05);
+scene.add(frame);
+const print = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.27), printMat);
+print.position.set(0.5, 1.8, -ROOM_D/2+0.07);
+scene.add(print);
+
+// --- 挂钟 ---
+const clockFace = new THREE.Mesh(new THREE.CircleGeometry(0.12, 16),
+    makeMat(0xeeeeee, 0.3, 0.2));
+clockFace.position.set(-0.4, 2.2, -ROOM_D/2+0.06);
+scene.add(clockFace);
+const clockRing = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.14, 16),
+    makeMat(0x3a2a1a, 0.4, 0.3));
+clockRing.position.set(-0.4, 2.2, -ROOM_D/2+0.07);
+scene.add(clockRing);
+
+// --- 天花板灯(主灯) ---
+const ceilingLight = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12),
+    makeMat(0xffffff, 0.1, 0, { emissive: 0xffeecc, emissiveIntensity: 0.5 }));
+ceilingLight.position.set(0, ROOM_H-0.1, 0);
+scene.add(ceilingLight);
+const ceilingLight2 = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.08, 0.04, 12),
+    makeMat(0x3a3a3a, 0.5));
+ceilingLight2.position.set(0, ROOM_H-0.12, 0);
+scene.add(ceilingLight2);
+
+// --- 窗户 (左墙) ---
+const windowMat = new THREE.MeshPhysicalMaterial({
+    color: 0x88ccff, transparent: true, opacity: 0.2, roughness: 0.1, metalness: 0.0
+});
+const window_ = new THREE.Mesh(new THREE.BoxGeometry(0.01, 1.2, 1.0), windowMat);
+window_.position.set(-ROOM_W/2+0.07, 1.5, 0.3);
+scene.add(window_);
+const windowFrame = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.3, 1.1), makeMat(0x5a4a3a, 0.5));
+windowFrame.position.set(-ROOM_W/2+0.05, 1.5, 0.3);
+scene.add(windowFrame);
+// 窗框十字
+const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.02, 1.04), makeMat(0x4a3a2a, 0.5));
+crossH.position.set(-ROOM_W/2+0.05, 1.5, 0.3);
+scene.add(crossH);
+const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.24, 0.02), makeMat(0x4a3a2a, 0.5));
+crossV.position.set(-ROOM_W/2+0.05, 1.5, 0.3);
+scene.add(crossV);
+
+// ===== 碰撞体 =====
+const RADIUS = 0.25;
+const colliders = [
+    // 墙壁
+    { x: [-3.05, 3.05], z: [-3.05, -2.85] },
+    { x: [-3.05, -0.85], z: [2.85, 3.05] },
+    { x: [0.85, 3.05], z: [2.85, 3.05] },
+    { x: [-3.05, -2.85], z: [-3.05, 3.05] },
+    { x: [2.85, 3.05], z: [-3.05, 3.05] },
+    // 桌子
+    { x: [-0.75, 0.75], z: [-0.5, 0.5] },
+    // 椅子（简化碰撞）
+    { x: [-0.22, 0.22], z: [-1.38, -0.62] },
+    { x: [-0.22, 0.22], z: [0.62, 1.38] },
+    { x: [-1.03, -0.47], z: [-0.22, 0.22] },
+    { x: [0.47, 1.03], z: [-0.22, 0.22] },
+    // 茶几
+    { x: [1.5, 2.1], z: [-1.8, -1.2] },
+];
+
+function checkCollision(x, z) {
+    for (const c of colliders) {
+        if (x + RADIUS > c.x[0] && x - RADIUS < c.x[1] &&
+            z + RADIUS > c.z[0] && z - RADIUS < c.z[1]) return true;
+    }
+    return false;
+}
+
+// ===== 鬼魂角色 =====
+const ghost = new THREE.Group();
+
+// 身体
+const bodyMat = new THREE.MeshPhysicalMaterial({
+    color: 0x88ddff, emissive: 0x4488cc, emissiveIntensity: 0.3,
+    transparent: true, opacity: 0.55, roughness: 0.1, clearcoat: 0.3,
+});
+const body = new THREE.Mesh(new THREE.SphereGeometry(0.35, 20, 20), bodyMat);
+body.position.y = 0.7;
+body.scale.set(1, 1.3, 1);
+ghost.add(body);
+
+// 光晕
+const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x88ddff, transparent: true, opacity: 0.08, depthWrite: false,
+});
+const glow = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), glowMat);
+glow.position.y = 0.7;
+ghost.add(glow);
+
+// 眼睛
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+const eyeGeo = new THREE.SphereGeometry(0.04, 8, 8);
+const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.1, 0.95, -0.35); ghost.add(eyeL);
+const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(0.1, 0.95, -0.35); ghost.add(eyeR);
+
+// 尾巴
+const trailMat = new THREE.MeshPhysicalMaterial({
+    color: 0x88ddff, emissive: 0x4488cc, emissiveIntensity: 0.2,
+    transparent: true, opacity: 0.25, roughness: 0.3,
+});
+const trail = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.35, 8), trailMat);
+trail.position.set(0, -0.1, 0.35);
+trail.rotation.x = Math.PI/3;
+ghost.add(trail);
+
+// 粒子
+const pCount = 25;
+const pPos = new Float32Array(pCount * 3);
+for (let i = 0; i < pCount; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const r = 0.4 + Math.random() * 0.3;
+    pPos[i*3] = Math.cos(theta) * r;
+    pPos[i*3+1] = 0.5 + Math.random() * 0.5;
+    pPos[i*3+2] = Math.sin(theta) * r;
+}
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+const pMat = new THREE.PointsMaterial({
+    color: 0x88ddff, transparent: true, opacity: 0.25, size: 0.025,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+});
+const particles = new THREE.Points(pGeo, pMat);
+ghost.add(particles);
+
+// 鬼魂底座光晕
+const groundGlow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.4, 16),
+    new THREE.MeshBasicMaterial({ color: 0x88ddff, transparent: true, opacity: 0.08, depthWrite: false })
+);
+groundGlow.rotation.x = -Math.PI/2;
+groundGlow.position.y = 0.02;
+ghost.add(groundGlow);
+
+ghost.position.set(0, 0.4, 1.5);
+scene.add(ghost);
+
+// ===== 相机配置 =====
+const CAM_3RD = new THREE.Vector3(0, 2.0, 3.2);
+const CAM_1ST = new THREE.Vector3(0, 1.35, 0.15);
+let isFirstPerson = false;
+let viewLerp = 0;
+
+// ===== 输入 =====
+const keys = {};
+document.addEventListener('keydown', (e) => {
+    keys[e.key.toLowerCase()] = true;
+    if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+let yaw = 0, pitch = -0.25;
+
+document.addEventListener('mousemove', (e) => {
+    if (document.pointerLockElement === renderer.domElement) {
+        yaw -= e.movementX * 0.003;
+        pitch -= e.movementY * 0.003;
+        pitch = Math.max(-1.2, Math.min(0.8, pitch));
+    }
+});
+
+// 触控
+document.querySelectorAll('.tc-btn[data-key]').forEach(btn => {
+    const k = btn.dataset.key;
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[k] = true; });
+    btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[k] = false; });
+    btn.addEventListener('mousedown', () => keys[k] = true);
+    btn.addEventListener('mouseup', () => keys[k] = false);
+});
+
+// ===== UI =====
+const hint = document.getElementById('hint');
+const hud = document.getElementById('hud');
+const roomLabel = document.getElementById('room-label');
+const posDisplay = document.getElementById('pos-display');
+const viewMode = document.getElementById('view-mode');
+const ghostIndicator = document.getElementById('ghost-indicator');
+const loading = document.getElementById('loading');
+
+// 隐藏 loading
+setTimeout(() => loading.classList.add('hidden'), 300);
+
+renderer.domElement.addEventListener('click', () => {
+    if (!document.pointerLockElement) renderer.domElement.requestPointerLock();
+});
+
+document.addEventListener('pointerlockchange', () => {
+    if (document.pointerLockElement === renderer.domElement) {
+        hint.classList.add('hidden');
+        hud.classList.add('show');
+        ghostIndicator.classList.add('show');
+    } else {
+        hint.classList.remove('hidden');
+    }
+});
+
+function toggleView() {
+    isFirstPerson = !isFirstPerson;
+    viewMode.textContent = isFirstPerson ? '第一人称' : '第三人称';
+}
+document.getElementById('toggle-btn').onclick = toggleView;
+document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'v') toggleView();
+    if (e.key.toLowerCase() === 'r') resetPos();
+});
+
+function resetPos() {
+    ghost.position.set(0, 0.4, 1.5);
+    yaw = 0; pitch = -0.25;
+}
+document.getElementById('btn-reset').onclick = resetPos;
+
+// ===== 动画循环 =====
+let time = 0;
+
+function animate() {
+    requestAnimationFrame(animate);
+    time += 0.016;
+
+    // --- 输入移动 ---
+    if (document.pointerLockElement === renderer.domElement) {
+        const speed = keys['shift'] ? 2.8 : 1.2;
+        const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+        const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+        
+        let dx = 0, dz = 0;
+        if (keys['w'] || keys['arrowup']) { dx += fwd.x; dz += fwd.z; }
+        if (keys['s'] || keys['arrowdown']) { dx -= fwd.x; dz -= fwd.z; }
+        if (keys['a'] || keys['arrowleft']) { dx -= right.x; dz -= right.z; }
+        if (keys['d'] || keys['arrowright']) { dx += right.x; dz += right.z; }
+        
+        if (dx !== 0 || dz !== 0) {
+            const len = Math.sqrt(dx*dx + dz*dz);
+            const nx = ghost.position.x + dx/len * speed * 0.016;
+            const nz = ghost.position.z + dz/len * speed * 0.016;
+            
+            if (!checkCollision(nx, nz)) {
+                ghost.position.x = nx;
+                ghost.position.z = nz;
+            } else {
+                if (!checkCollision(nx, ghost.position.z)) ghost.position.x = nx;
+                if (!checkCollision(ghost.position.x, nz)) ghost.position.z = nz;
+            }
+        }
+    }
+
+    // --- 鬼魂动画 ---
+    const fy = Math.sin(time * 1.2) * 0.05;
+    body.position.y = 0.7 + fy;
+    glow.position.y = 0.7 + fy;
+    trail.rotation.z = Math.sin(time * 2.0) * 0.15;
+    
+    particles.rotation.y = time * 0.5;
+    particles.position.y = fy;
+    groundGlow.scale.setScalar(1 + Math.sin(time*1.5)*0.05);
+    
+    const blink = Math.sin(time * 3.0) > 0.98 ? 0.1 : 0.8;
+    eyeL.material.opacity = blink;
+    eyeR.material.opacity = blink;
+    
+    bodyMat.emissiveIntensity = 0.25 + Math.sin(time * 1.5) * 0.1;
+    trailMat.emissiveIntensity = bodyMat.emissiveIntensity * 0.7;
+    ghostLight.intensity = 0.4 + Math.sin(time * 1.5) * 0.15;
+    
+    ghost.rotation.y = yaw;
+
+    // --- 相机 ---
+    const targetV = isFirstPerson ? 1 : 0;
+    viewLerp += (targetV - viewLerp) * 0.06;
+    
+    if (viewLerp < 0.5) {
+        const offset = CAM_3RD.clone();
+        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        const ideal = ghost.position.clone().add(offset);
+        camera.position.lerp(ideal, 0.1);
+        const look = ghost.position.clone();
+        look.y += 0.7;
+        camera.lookAt(look);
+    } else {
+        const offset = CAM_1ST.clone();
+        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        camera.position.copy(ghost.position.clone().add(offset));
+        const dir = new THREE.Vector3(
+            -Math.sin(yaw)*Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw)*Math.cos(pitch)
+        );
+        camera.lookAt(camera.position.clone().add(dir));
+    }
+    
+    ghostLight.position.copy(ghost.position);
+    ghostLight.position.y += 1.0;
+
+    // --- HUD ---
+    posDisplay.textContent = `${ghost.position.x.toFixed(1)}, ${ghost.position.z.toFixed(1)}`;
+    if (!roomLabel.classList.contains('show')) roomLabel.classList.add('show');
+
+    renderer.render(scene, camera);
+}
+animate();
+
+// ===== 自适应 =====
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

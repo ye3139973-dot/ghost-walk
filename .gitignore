@@ -1,0 +1,31 @@
+# Blender 备份文件
+*.blend
+*.blend1
+*.blend11
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 渲染输出
+*.png
+*.jpg
+
+# 系统
+NUL
+Thumbs.db
+.DS_Store
+
+# 其他项目文件
+*.zip
+*.vbs
+*.bat
+*.ps1
+*.reg
+*.cs
+*.json
+
+# 临时文件
+phish_log.txt
+prompt.txt
+query
